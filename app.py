@@ -202,6 +202,18 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# Add custom CSS to make selectbox text white
+st.markdown("""
+<style>
+.stSelectbox > div > div > select {
+    color: #fff !important;
+}
+.stSelectbox label {
+    color: #fff !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
 # Initialize session state
 if 'authenticated' not in st.session_state:
     st.session_state.authenticated = False
@@ -444,8 +456,6 @@ elif st.session_state.stage == 'file_selection':
             st.warning("⚠️ No Excel files found in the current directory. Please add .xlsx or .xls files.")
         st.markdown("</div>", unsafe_allow_html=True)
     else:
-        st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
-        
         # File stats
         st.markdown(f"<div class='stat-label'>AVAILABLE DATASETS</div>", unsafe_allow_html=True)
         st.markdown(f"<div class='stat-number'>{len(excel_files)}</div>", unsafe_allow_html=True)
@@ -485,8 +495,6 @@ elif st.session_state.stage == 'file_selection':
                 st.session_state.stage = 'filter_setup'
                 time.sleep(0.3)
                 st.rerun()
-        
-        st.markdown("</div>", unsafe_allow_html=True)
     
     st.markdown("</div>", unsafe_allow_html=True)
 
