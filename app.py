@@ -71,12 +71,18 @@ st.markdown("""
     
     /* Inputs and buttons */
     .stTextInput > div > div > input,
+    .stSelectbox > div > div > select {
+        background: #1a1f2e !important;
+        border: 1px solid #2d3347 !important;
+        border-radius: 6px !important;
+        color: #ffffff !important;
+        padding: 0.5rem 1rem !important;
+    }
+    
     .stSelectbox > div > div {
-        background: #1a1f2e;
-        border: 1px solid #2d3347;
-        border-radius: 6px;
-        color: #ffffff;
-        padding: 0.5rem 1rem;
+        background: #1a1f2e !important;
+        border: 1px solid #2d3347 !important;
+        border-radius: 6px !important;
     }
     
     .stButton > button {
@@ -461,33 +467,12 @@ elif st.session_state.stage == 'file_selection':
                 
                 col1, col2, col3 = st.columns(3)
                 with col1:
-                    st.markdown(
-                        f"<div class='stat-card'>"
-                        f"<div style='color: #a0a0b0; font-size: 0.9rem;'>FILE SIZE</div>"
-                        f"<div style='color: white; font-size: 1.5rem; font-weight: 600; margin-top: 0.5rem;'>"
-                        f"{file_size:.2f} MB</div>"
-                        f"</div>",
-                        unsafe_allow_html=True
-                    )
+                    st.metric("FILE SIZE", f"{file_size:.2f} MB")
                 with col2:
-                    st.markdown(
-                        f"<div class='stat-card'>"
-                        f"<div style='color: #a0a0b0; font-size: 0.9rem;'>LAST MODIFIED</div>"
-                        f"<div style='color: white; font-size: 1.5rem; font-weight: 600; margin-top: 0.5rem;'>"
-                        f"{file_modified.strftime('%d %b')}</div>"
-                        f"</div>",
-                        unsafe_allow_html=True
-                    )
+                    st.metric("LAST MODIFIED", file_modified.strftime('%d %b'))
                 with col3:
                     file_ext = file_path.suffix.upper().replace('.', '')
-                    st.markdown(
-                        f"<div class='stat-card'>"
-                        f"<div style='color: #a0a0b0; font-size: 0.9rem;'>FORMAT</div>"
-                        f"<div style='color: white; font-size: 1.5rem; font-weight: 600; margin-top: 0.5rem;'>"
-                        f"{file_ext}</div>"
-                        f"</div>",
-                        unsafe_allow_html=True
-                    )
+                    st.metric("FORMAT", file_ext)
             except Exception as e:
                 st.error(f"Error reading file information: {str(e)}")
         
@@ -548,39 +533,15 @@ elif st.session_state.stage == 'filter_setup':
         
         col1, col2, col3, col4 = st.columns(4)
         with col1:
-            st.markdown(
-                f"<div class='stat-card'>"
-                f"<div class='stat-number'>{total_sheets}</div>"
-                f"<div class='stat-label'>Sheets</div>"
-                f"</div>",
-                unsafe_allow_html=True
-            )
+            st.metric("Sheets", total_sheets)
         with col2:
-            st.markdown(
-                f"<div class='stat-card'>"
-                f"<div class='stat-number'>{total_rows:,}</div>"
-                f"<div class='stat-label'>Total Rows</div>"
-                f"</div>",
-                unsafe_allow_html=True
-            )
+            st.metric("Total Rows", f"{total_rows:,}")
         with col3:
             total_cols = sum(insight['total_columns'] for insight in st.session_state.data_insights.values())
-            st.markdown(
-                f"<div class='stat-card'>"
-                f"<div class='stat-number'>{total_cols}</div>"
-                f"<div class='stat-label'>Total Columns</div>"
-                f"</div>",
-                unsafe_allow_html=True
-            )
+            st.metric("Total Columns", total_cols)
         with col4:
             total_memory = sum(insight['memory_usage'] for insight in st.session_state.data_insights.values())
-            st.markdown(
-                f"<div class='stat-card'>"
-                f"<div class='stat-number'>{total_memory:.1f}</div>"
-                f"<div class='stat-label'>MB in Memory</div>"
-                f"</div>",
-                unsafe_allow_html=True
-            )
+            st.metric("MB in Memory", f"{total_memory:.1f}")
         
         st.markdown("</div>", unsafe_allow_html=True)
         
@@ -720,80 +681,21 @@ elif st.session_state.stage == 'data_view':
                 col1, col2, col3, col4 = st.columns(4)
                 
                 with col1:
-                    st.markdown(
-                        f"<div class='stat-card'>"
-                        f"<div class='stat-number'>{len(df):,}</div>"
-                        f"<div class='stat-label'>Rows Displayed</div>"
-                        f"</div>",
-                        unsafe_allow_html=True
-                    )
+                    st.metric("Rows Displayed", f"{len(df):,}")
                 
                 with col2:
                     filtered_pct = (len(df) / original_count * 100) if original_count > 0 else 0
-                    st.markdown(
-                        f"<div class='stat-card'>"
-                        f"<div class='stat-number'>{filtered_pct:.1f}%</div>"
-                        f"<div class='stat-label'>Data Shown</div>"
-                        f"</div>",
-                        unsafe_allow_html=True
-                    )
+                    st.metric("Data Shown", f"{filtered_pct:.1f}%")
                 
                 with col3:
                     active_filter_count = sum(
                         1 for filters in st.session_state.active_filters.get(sheet_name, {}).values() 
                         if filters
                     )
-                    st.markdown(
-                        f"<div class='stat-card'>"
-                        f"<div class='stat-number'>{active_filter_count}</div>"
-                        f"<div class='stat-label'>Active Filters</div>"
-                        f"</div>",
-                        unsafe_allow_html=True
-                    )
+                    st.metric("Active Filters", active_filter_count)
                 
                 with col4:
-                    st.markdown(
-                        f"<div class='stat-card'>"
-                        f"<div class='stat-number'>{len(df.columns)}</div>"
-                        f"<div class='stat-label'>Columns</div>"
-                        f"</div>",
-                        unsafe_allow_html=True
-                    )
-                
-                st.markdown("<br>", unsafe_allow_html=True)
-                
-                # Quick insights
-                if len(df) > 0:
-                    st.markdown("### 📈 Quick Insights")
-                    
-                    # Find numeric columns for insights
-                    numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
-                    
-                    if numeric_cols:
-                        insight_cols = st.columns(min(len(numeric_cols), 4))
-                        
-                        for i, col in enumerate(numeric_cols[:4]):
-                            with insight_cols[i]:
-                                try:
-                                    avg_val = df[col].mean()
-                                    if pd.notna(avg_val):
-                                        st.markdown(
-                                            f"<div style='background: rgba(120, 119, 198, 0.1); "
-                                            f"padding: 1rem; border-radius: 12px; "
-                                            f"border: 1px solid rgba(120, 119, 198, 0.3);'>"
-                                            f"<div style='color: #a0a0b0; font-size: 0.8rem;'>{col}</div>"
-                                            f"<div style='color: white; font-size: 1.3rem; font-weight: 600; margin-top: 0.5rem;'>"
-                                            f"{avg_val:,.2f}</div>"
-                                            f"<div style='color: #48dbfb; font-size: 0.8rem;'>Average</div>"
-                                            f"</div>",
-                                            unsafe_allow_html=True
-                                        )
-                                except Exception as e:
-                                    st.warning(f"Could not calculate average for {col}")
-                        
-                        st.markdown("<br>", unsafe_allow_html=True)
-                    else:
-                        st.info("No numeric columns found for insights")
+                    st.metric("Columns", len(df.columns))
                 
                 st.markdown("<br>", unsafe_allow_html=True)
                 
