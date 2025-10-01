@@ -3,390 +3,155 @@ import pandas as pd
 import os
 from pathlib import Path
 import time
+import plotly.express as px
+import plotly.graph_objects as go
 from datetime import datetime
 import json
 
 # Page configuration
 st.set_page_config(
     page_title="Research Portal",
-    page_icon="🔬",
+    page_icon="📊",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
 
-# Premium dark theme CSS with smooth animations
+# Clean, modern dark theme CSS
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+    /* Global styles */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
     
-    /* Global Reset */
     * {
-        font-family: 'Space Grotesk', sans-serif;
-        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        font-family: 'Inter', sans-serif;
+        transition: all 0.2s ease;
     }
     
-    /* Hide Streamlit branding */
-    #MainMenu, footer, header {visibility: hidden;}
+    /* Hide Streamlit elements */
+    #MainMenu, footer, header {display: none;}
     
-    /* Dark gradient background with particle effect */
+    /* Dark theme base */
     .main {
-        background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 50%, #16213e 100%);
-        background-attachment: fixed;
-        min-height: 100vh;
-        position: relative;
-        overflow-x: hidden;
+        background-color: #0f1117;
+        color: #e6e6e6;
     }
-    
-    /* Animated background overlay */
-    .main::before {
-        content: '';
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background: 
-            radial-gradient(circle at 20% 50%, rgba(120, 119, 198, 0.1) 0%, transparent 50%),
-            radial-gradient(circle at 80% 80%, rgba(255, 107, 107, 0.1) 0%, transparent 50%),
-            radial-gradient(circle at 40% 20%, rgba(72, 219, 251, 0.1) 0%, transparent 50%);
-        pointer-events: none;
-        animation: float 20s ease-in-out infinite;
-    }
-    
-    @keyframes float {
-        0%, 100% { transform: translate(0, 0) rotate(0deg); }
-        33% { transform: translate(30px, -30px) rotate(120deg); }
-        66% { transform: translate(-20px, 20px) rotate(240deg); }
-    }
-    
-    /* Smooth fade-in animations */
-    @keyframes fadeInUp {
-        from {
-            opacity: 0;
-            transform: translateY(30px);
-        }
-        to {
-            opacity: 1;
-            transform: translateY(0);
-        }
-    }
-    
-    @keyframes fadeIn {
-        from { opacity: 0; }
-        to { opacity: 1; }
-    }
-    
-    @keyframes slideInRight {
-        from {
-            opacity: 0;
-            transform: translateX(50px);
-        }
-        to {
-            opacity: 1;
-            transform: translateX(0);
-        }
-    }
-    
-    @keyframes glow {
-        0%, 100% { box-shadow: 0 0 20px rgba(120, 119, 198, 0.4); }
-        50% { box-shadow: 0 0 40px rgba(120, 119, 198, 0.6); }
-    }
-    
-    .fade-in { animation: fadeInUp 0.8s ease-out; }
     
     /* Typography */
-    .main-title {
-        font-size: 3.5rem;
-        font-weight: 700;
-        background: linear-gradient(135deg, #ffffff 0%, #7877c6 50%, #48dbfb 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
-        margin-bottom: 0.5rem;
-        letter-spacing: -2px;
-        animation: fadeInUp 0.8s ease-out;
+    h1, h2, h3 {
+        color: #ffffff;
+        font-weight: 600;
+        margin-bottom: 1rem;
     }
     
     .subtitle {
-        font-size: 1.1rem;
-        font-weight: 400;
-        color: #a0a0b0;
-        margin-bottom: 3rem;
-        animation: fadeInUp 1s ease-out;
+        color: #a3a3a3;
+        font-size: 1rem;
+        margin-bottom: 2rem;
     }
     
-    /* Premium glass-morphism cards */
-    .glass-card {
-        background: rgba(26, 26, 46, 0.7);
-        backdrop-filter: blur(20px);
-        border-radius: 24px;
-        padding: 3rem;
-        box-shadow: 
-            0 8px 32px rgba(0, 0, 0, 0.4),
-            inset 0 1px 0 rgba(255, 255, 255, 0.1);
-        margin: 2rem 0;
-        animation: fadeInUp 0.8s ease-out;
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        position: relative;
-        overflow: hidden;
+    /* Cards */
+    .card {
+        background: #1a1f2e;
+        border: 1px solid #2d3347;
+        border-radius: 8px;
+        padding: 1.5rem;
+        margin: 1rem 0;
     }
     
-    .glass-card::before {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: -100%;
-        width: 100%;
-        height: 100%;
-        background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.05), transparent);
-        transition: left 0.5s;
+    /* Inputs and buttons */
+    .stTextInput > div > div > input,
+    .stSelectbox > div > div {
+        background: #1a1f2e;
+        border: 1px solid #2d3347;
+        border-radius: 6px;
+        color: #ffffff;
+        padding: 0.5rem 1rem;
     }
     
-    .glass-card:hover::before {
-        left: 100%;
-    }
-    
-    /* Premium buttons with gradient and glow */
     .stButton > button {
-        background: linear-gradient(135deg, #7877c6 0%, #48dbfb 100%);
+        background: #3b5bdb;
         color: white;
         border: none;
-        border-radius: 12px;
-        padding: 1rem 3rem;
-        font-weight: 600;
-        font-size: 1rem;
-        letter-spacing: 0.5px;
-        text-transform: uppercase;
-        box-shadow: 0 8px 24px rgba(120, 119, 198, 0.4);
-        cursor: pointer;
-        position: relative;
-        overflow: hidden;
-    }
-    
-    .stButton > button::before {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: -100%;
-        width: 100%;
-        height: 100%;
-        background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
-        transition: left 0.5s;
-    }
-    
-    .stButton > button:hover::before {
-        left: 100%;
+        border-radius: 6px;
+        padding: 0.5rem 1.5rem;
+        font-weight: 500;
     }
     
     .stButton > button:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 12px 32px rgba(120, 119, 198, 0.6);
+        background: #4c6ef5;
+        box-shadow: 0 2px 6px rgba(59, 91, 219, 0.2);
     }
     
-    /* Stylish inputs */
-    .stTextInput > div > div > input {
-        background: rgba(255, 255, 255, 0.05);
-        border: 2px solid rgba(120, 119, 198, 0.3);
-        border-radius: 12px;
-        padding: 1rem 1.5rem;
-        font-size: 1rem;
-        color: white;
+    /* Tables */
+    .dataframe {
+        background: #1a1f2e !important;
+        border: 1px solid #2d3347 !important;
+        border-radius: 6px !important;
     }
     
-    .stTextInput > div > div > input:focus {
-        border-color: #7877c6;
-        box-shadow: 0 0 20px rgba(120, 119, 198, 0.4);
-        background: rgba(255, 255, 255, 0.08);
+    /* Metrics */
+    .metric-card {
+        background: #1a1f2e;
+        border: 1px solid #2d3347;
+        border-radius: 6px;
+        padding: 1rem;
+        text-align: center;
     }
     
-    .stTextInput > div > div > input::placeholder {
-        color: rgba(255, 255, 255, 0.3);
+    .metric-value {
+        color: #ffffff;
+        font-size: 1.5rem;
+        font-weight: 600;
     }
     
-    /* Selectbox styling */
-    .stSelectbox > div > div, .stMultiSelect > div > div {
-        background: rgba(255, 255, 255, 0.05);
-        border: 2px solid rgba(120, 119, 198, 0.3);
-        border-radius: 12px;
-        color: white;
+    .metric-label {
+        color: #a3a3a3;
+        font-size: 0.85rem;
+        margin-top: 0.25rem;
     }
     
-    /* Tab styling */
+    /* Charts */
+    .js-plotly-plot {
+        background: #1a1f2e !important;
+        border: 1px solid #2d3347 !important;
+        border-radius: 6px !important;
+        padding: 1rem !important;
+    }
+    
+    /* Tabs */
     .stTabs [data-baseweb="tab-list"] {
-        gap: 12px;
-        background: rgba(26, 26, 46, 0.5);
-        padding: 12px;
-        border-radius: 16px;
-        backdrop-filter: blur(10px);
+        background: #1a1f2e;
+        border-radius: 6px;
+        padding: 0.5rem;
+        gap: 0.5rem;
     }
     
     .stTabs [data-baseweb="tab"] {
-        border-radius: 12px;
-        padding: 12px 24px;
-        font-weight: 600;
-        color: #a0a0b0;
-        background: transparent;
-        border: 2px solid transparent;
+        border-radius: 4px;
+        color: #a3a3a3;
+        font-weight: 500;
     }
     
     .stTabs [aria-selected="true"] {
-        background: linear-gradient(135deg, rgba(120, 119, 198, 0.3), rgba(72, 219, 251, 0.3));
+        background: #3b5bdb;
         color: white;
-        border: 2px solid rgba(120, 119, 198, 0.5);
-        box-shadow: 0 4px 16px rgba(120, 119, 198, 0.3);
-    }
-    
-    /* Metrics with glow effect */
-    .stMetric {
-        background: rgba(120, 119, 198, 0.1);
-        padding: 1.5rem;
-        border-radius: 16px;
-        border: 1px solid rgba(120, 119, 198, 0.3);
-        animation: fadeIn 0.6s ease-out;
-    }
-    
-    .stMetric:hover {
-        background: rgba(120, 119, 198, 0.2);
-        border-color: rgba(120, 119, 198, 0.5);
-        transform: scale(1.02);
-    }
-    
-    /* Dataframe dark theme */
-    .dataframe {
-        background: rgba(10, 10, 10, 0.6) !important;
-        border-radius: 16px !important;
-        border: 1px solid rgba(120, 119, 198, 0.2) !important;
-    }
-    
-    /* Success/Error messages */
-    .stSuccess {
-        background: rgba(72, 219, 155, 0.2);
-        border: 1px solid rgba(72, 219, 155, 0.5);
-        border-radius: 12px;
-        color: #48db9b;
-        animation: fadeIn 0.5s ease-out;
-    }
-    
-    .stError {
-        background: rgba(255, 107, 107, 0.2);
-        border: 1px solid rgba(255, 107, 107, 0.5);
-        border-radius: 12px;
-        color: #ff6b6b;
-        animation: fadeIn 0.5s ease-out;
-    }
-    
-    /* Loading spinner */
-    .stSpinner > div {
-        border-color: #7877c6 transparent transparent transparent !important;
-    }
-    
-    /* Filter badges */
-    .filter-badge {
-        display: inline-block;
-        background: linear-gradient(135deg, #7877c6, #48dbfb);
-        color: white;
-        padding: 0.5rem 1.2rem;
-        border-radius: 20px;
-        font-size: 0.9rem;
-        font-weight: 600;
-        margin: 0.25rem;
-        animation: slideInRight 0.4s ease-out;
-        box-shadow: 0 4px 12px rgba(120, 119, 198, 0.3);
-    }
-    
-    /* Expander styling */
-    .streamlit-expanderHeader {
-        background: rgba(120, 119, 198, 0.1);
-        border-radius: 12px;
-        border: 1px solid rgba(120, 119, 198, 0.3);
-        color: white;
-        font-weight: 600;
-    }
-    
-    .streamlit-expanderHeader:hover {
-        background: rgba(120, 119, 198, 0.2);
-        border-color: rgba(120, 119, 198, 0.5);
-    }
-    
-    /* Scrollbar styling */
-    ::-webkit-scrollbar {
-        width: 10px;
-        height: 10px;
-    }
-    
-    ::-webkit-scrollbar-track {
-        background: rgba(26, 26, 46, 0.5);
-    }
-    
-    ::-webkit-scrollbar-thumb {
-        background: linear-gradient(135deg, #7877c6, #48dbfb);
-        border-radius: 10px;
-    }
-    
-    ::-webkit-scrollbar-thumb:hover {
-        background: linear-gradient(135deg, #48dbfb, #7877c6);
     }
     
     /* Status indicator */
+    .status {
+        color: #a3a3a3;
+        font-size: 0.85rem;
+        text-align: center;
+        margin-top: 2rem;
+    }
+    
     .status-dot {
         display: inline-block;
-        width: 8px;
-        height: 8px;
+        width: 6px;
+        height: 6px;
+        background: #4ade80;
         border-radius: 50%;
-        background: #48db9b;
-        margin-right: 8px;
-        animation: glow 2s ease-in-out infinite;
-    }
-    
-    /* Info cards for stats */
-    .stat-card {
-        background: rgba(120, 119, 198, 0.1);
-        border: 2px solid rgba(120, 119, 198, 0.3);
-        border-radius: 16px;
-        padding: 1.5rem;
-        text-align: center;
-        animation: fadeInUp 0.6s ease-out;
-    }
-    
-    .stat-card:hover {
-        background: rgba(120, 119, 198, 0.2);
-        border-color: rgba(120, 119, 198, 0.5);
-        transform: translateY(-5px);
-        box-shadow: 0 8px 24px rgba(120, 119, 198, 0.3);
-    }
-    
-    .stat-number {
-        font-size: 2.5rem;
-        font-weight: 700;
-        background: linear-gradient(135deg, #7877c6, #48dbfb);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
-    }
-    
-    .stat-label {
-        color: #a0a0b0;
-        font-size: 0.9rem;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-        margin-top: 0.5rem;
-    }
-    
-    /* Radio buttons */
-    .stRadio > div {
-        background: rgba(26, 26, 46, 0.5);
-        padding: 1rem;
-        border-radius: 12px;
-        border: 1px solid rgba(120, 119, 198, 0.3);
-    }
-    
-    /* Code/monospace text */
-    code {
-        font-family: 'JetBrains Mono', monospace;
-        background: rgba(120, 119, 198, 0.2);
-        padding: 0.2rem 0.6rem;
-        border-radius: 6px;
-        color: #48dbfb;
+        margin-right: 0.5rem;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -446,6 +211,53 @@ def calculate_insights(data):
             'memory_usage': df.memory_usage(deep=True).sum() / 1024 / 1024  # MB
         }
     return insights
+
+def create_overview_chart(insights):
+    """Create an overview visualization of all sheets"""
+    sheet_names = list(insights.keys())
+    rows = [insights[sheet]['total_rows'] for sheet in sheet_names]
+    cols = [insights[sheet]['total_columns'] for sheet in sheet_names]
+    
+    fig = go.Figure()
+    
+    fig.add_trace(go.Bar(
+        name='Rows',
+        x=sheet_names,
+        y=rows,
+        marker=dict(
+            color='rgba(120, 119, 198, 0.7)',
+            line=dict(color='rgba(120, 119, 198, 1)', width=2)
+        )
+    ))
+    
+    fig.add_trace(go.Bar(
+        name='Columns',
+        x=sheet_names,
+        y=cols,
+        marker=dict(
+            color='rgba(72, 219, 251, 0.7)',
+            line=dict(color='rgba(72, 219, 251, 1)', width=2)
+        )
+    ))
+    
+    fig.update_layout(
+        barmode='group',
+        template='plotly_dark',
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        font=dict(family='Space Grotesk', size=12, color='white'),
+        height=400,
+        margin=dict(l=40, r=40, t=40, b=40),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1
+        )
+    )
+    
+    return fig
 
 def apply_filter(df, column, filter_values):
     """Apply filter to dataframe"""
@@ -618,15 +430,9 @@ elif st.session_state.stage == 'filter_setup':
         
         st.markdown("### 📊 Data Overview")
         
-        # Create simple bar chart visualization using Streamlit native charts
-        insights = st.session_state.data_insights
-        chart_data = pd.DataFrame({
-            'Sheet': list(insights.keys()),
-            'Rows': [insights[sheet]['total_rows'] for sheet in insights.keys()],
-            'Columns': [insights[sheet]['total_columns'] for sheet in insights.keys()]
-        })
-        
-        st.bar_chart(chart_data.set_index('Sheet'))
+        # Create visualization
+        fig = create_overview_chart(st.session_state.data_insights)
+        st.plotly_chart(fig, use_container_width=True)
         
         # Summary stats
         total_rows = sum(insight['total_rows'] for insight in st.session_state.data_insights.values())
@@ -864,15 +670,34 @@ elif st.session_state.stage == 'data_view':
                         
                         st.markdown("<br>", unsafe_allow_html=True)
                         
-                        # Create a simple chart for the first numeric column using Streamlit native
+                        # Create a simple chart for the first numeric column
                         if len(numeric_cols) > 0:
                             chart_col = numeric_cols[0]
-                            st.markdown(f"**Distribution of {chart_col}**")
                             
-                            # Create histogram data
-                            hist_data = df[chart_col].dropna()
-                            if len(hist_data) > 0:
-                                st.bar_chart(hist_data.value_counts().sort_index())
+                            # Create distribution chart
+                            fig = go.Figure()
+                            
+                            fig.add_trace(go.Histogram(
+                                x=df[chart_col],
+                                marker=dict(
+                                    color='rgba(120, 119, 198, 0.7)',
+                                    line=dict(color='rgba(120, 119, 198, 1)', width=1)
+                                ),
+                                name=chart_col
+                            ))
+                            
+                            fig.update_layout(
+                                title=f"Distribution of {chart_col}",
+                                template='plotly_dark',
+                                paper_bgcolor='rgba(0,0,0,0)',
+                                plot_bgcolor='rgba(0,0,0,0)',
+                                font=dict(family='Space Grotesk', size=12, color='white'),
+                                height=300,
+                                margin=dict(l=40, r=40, t=60, b=40),
+                                showlegend=False
+                            )
+                            
+                            st.plotly_chart(fig, use_container_width=True)
                 
                 st.markdown("<br>", unsafe_allow_html=True)
                 
