@@ -3,8 +3,6 @@ import pandas as pd
 import os
 from pathlib import Path
 import time
-import plotly.express as px
-import plotly.graph_objects as go
 from datetime import datetime
 import json
 
@@ -449,53 +447,6 @@ def calculate_insights(data):
         }
     return insights
 
-def create_overview_chart(insights):
-    """Create an overview visualization of all sheets"""
-    sheet_names = list(insights.keys())
-    rows = [insights[sheet]['total_rows'] for sheet in sheet_names]
-    cols = [insights[sheet]['total_columns'] for sheet in sheet_names]
-    
-    fig = go.Figure()
-    
-    fig.add_trace(go.Bar(
-        name='Rows',
-        x=sheet_names,
-        y=rows,
-        marker=dict(
-            color='rgba(120, 119, 198, 0.7)',
-            line=dict(color='rgba(120, 119, 198, 1)', width=2)
-        )
-    ))
-    
-    fig.add_trace(go.Bar(
-        name='Columns',
-        x=sheet_names,
-        y=cols,
-        marker=dict(
-            color='rgba(72, 219, 251, 0.7)',
-            line=dict(color='rgba(72, 219, 251, 1)', width=2)
-        )
-    ))
-    
-    fig.update_layout(
-        barmode='group',
-        template='plotly_dark',
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        font=dict(family='Space Grotesk', size=12, color='white'),
-        height=400,
-        margin=dict(l=40, r=40, t=40, b=40),
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="right",
-            x=1
-        )
-    )
-    
-    return fig
-
 def apply_filter(df, column, filter_values):
     """Apply filter to dataframe"""
     if filter_values and len(filter_values) > 0:
@@ -667,9 +618,15 @@ elif st.session_state.stage == 'filter_setup':
         
         st.markdown("### 📊 Data Overview")
         
-        # Create visualization
-        fig = create_overview_chart(st.session_state.data_insights)
-        st.plotly_chart(fig, use_container_width=True)
+        # Create simple bar chart visualization using Streamlit native charts
+        insights = st.session_state.data_insights
+        chart_data = pd.DataFrame({
+            'Sheet': list(insights.keys()),
+            'Rows': [insights[sheet]['total_rows'] for sheet in insights.keys()],
+            'Columns': [insights[sheet]['total_columns'] for sheet in insights.keys()]
+        })
+        
+        st.bar_chart(chart_data.set_index('Sheet'))
         
         # Summary stats
         total_rows = sum(insight['total_rows'] for insight in st.session_state.data_insights.values())
@@ -907,34 +864,15 @@ elif st.session_state.stage == 'data_view':
                         
                         st.markdown("<br>", unsafe_allow_html=True)
                         
-                        # Create a simple chart for the first numeric column
+                        # Create a simple chart for the first numeric column using Streamlit native
                         if len(numeric_cols) > 0:
                             chart_col = numeric_cols[0]
+                            st.markdown(f"**Distribution of {chart_col}**")
                             
-                            # Create distribution chart
-                            fig = go.Figure()
-                            
-                            fig.add_trace(go.Histogram(
-                                x=df[chart_col],
-                                marker=dict(
-                                    color='rgba(120, 119, 198, 0.7)',
-                                    line=dict(color='rgba(120, 119, 198, 1)', width=1)
-                                ),
-                                name=chart_col
-                            ))
-                            
-                            fig.update_layout(
-                                title=f"Distribution of {chart_col}",
-                                template='plotly_dark',
-                                paper_bgcolor='rgba(0,0,0,0)',
-                                plot_bgcolor='rgba(0,0,0,0)',
-                                font=dict(family='Space Grotesk', size=12, color='white'),
-                                height=300,
-                                margin=dict(l=40, r=40, t=60, b=40),
-                                showlegend=False
-                            )
-                            
-                            st.plotly_chart(fig, use_container_width=True)
+                            # Create histogram data
+                            hist_data = df[chart_col].dropna()
+                            if len(hist_data) > 0:
+                                st.bar_chart(hist_data.value_counts().sort_index())
                 
                 st.markdown("<br>", unsafe_allow_html=True)
                 
@@ -989,4 +927,3 @@ elif st.session_state.stage == 'data_view':
         f"</div>",
         unsafe_allow_html=True
     )
-
