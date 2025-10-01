@@ -6,6 +6,19 @@ import time
 from datetime import datetime
 import json
 
+# Check for required dependencies
+try:
+    import openpyxl
+    OPENPYXL_AVAILABLE = True
+except ImportError:
+    OPENPYXL_AVAILABLE = False
+
+try:
+    import xlrd
+    XLRD_AVAILABLE = True
+except ImportError:
+    XLRD_AVAILABLE = False
+
 # Page configuration
 st.set_page_config(
     page_title="Research Portal",
@@ -211,24 +224,50 @@ def get_excel_files():
     """Get all Excel files in the current directory"""
     excel_files = []
     try:
-        for file in Path('.').glob('*.xlsx'):
-            if not file.name.startswith('~') and not file.name.startswith('.'):
-                excel_files.append(file.name)
-        for file in Path('.').glob('*.xls'):
-            if not file.name.startswith('~') and not file.name.startswith('.'):
-                excel_files.append(file.name)
+        # Check for .xlsx files only if openpyxl is available
+        if OPENPYXL_AVAILABLE:
+            for file in Path('.').glob('*.xlsx'):
+                if not file.name.startswith('~') and not file.name.startswith('.'):
+                    excel_files.append(file.name)
+        
+        # Check for .xls files only if xlrd is available
+        if XLRD_AVAILABLE:
+            for file in Path('.').glob('*.xls'):
+                if not file.name.startswith('~') and not file.name.startswith('.'):
+                    excel_files.append(file.name)
+        
+        if not OPENPYXL_AVAILABLE and not XLRD_AVAILABLE:
+            st.error("⚠️ No Excel libraries found. Please install 'openpyxl' for .xlsx files or 'xlrd' for .xls files.")
+            st.code("pip install openpyxl", language="bash")
+            
     except Exception as e:
         st.error(f"Error scanning for Excel files: {str(e)}")
     return sorted(excel_files)
 
 def load_excel_file(filename):
     """Load Excel file with all sheets"""
+    # Check dependencies first
+    file_ext = Path(filename).suffix.lower()
+    
+    if file_ext == '.xlsx' and not OPENPYXL_AVAILABLE:
+        st.error("⚠️ Missing dependency: 'openpyxl' is required to read .xlsx files.")
+        st.info("📦 Install it using: `pip install openpyxl`")
+        return None
+    
+    if file_ext == '.xls' and not XLRD_AVAILABLE:
+        st.error("⚠️ Missing dependency: 'xlrd' is required to read .xls files.")
+        st.info("📦 Install it using: `pip install xlrd`")
+        return None
+    
     try:
-        excel_file = pd.ExcelFile(filename)
+        # Specify engine based on file type
+        engine = 'openpyxl' if file_ext == '.xlsx' else 'xlrd'
+        excel_file = pd.ExcelFile(filename, engine=engine)
         data = {}
+        
         for sheet_name in excel_file.sheet_names:
             try:
-                df = pd.read_excel(filename, sheet_name=sheet_name)
+                df = pd.read_excel(filename, sheet_name=sheet_name, engine=engine)
                 # Handle empty sheets
                 if df.empty:
                     st.warning(f"Sheet '{sheet_name}' is empty")
@@ -373,11 +412,30 @@ elif st.session_state.stage == 'file_selection':
                 unsafe_allow_html=True
             )
     
+    # Check for dependencies and show warnings
+    if not OPENPYXL_AVAILABLE or not XLRD_AVAILABLE:
+        st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+        st.warning("⚠️ Missing Excel dependencies")
+        
+        if not OPENPYXL_AVAILABLE:
+            st.markdown("**Missing: openpyxl** (required for .xlsx files)")
+            st.code("pip install openpyxl", language="bash")
+        
+        if not XLRD_AVAILABLE:
+            st.markdown("**Missing: xlrd** (required for .xls files)")
+            st.code("pip install xlrd", language="bash")
+        
+        st.markdown("</div>", unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
+    
     excel_files = get_excel_files()
     
     if not excel_files:
         st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
-        st.warning("⚠️ No Excel files found in the current directory. Please add .xlsx or .xls files.")
+        if not OPENPYXL_AVAILABLE and not XLRD_AVAILABLE:
+            st.error("⚠️ Cannot scan for Excel files. Please install required dependencies.")
+        else:
+            st.warning("⚠️ No Excel files found in the current directory. Please add .xlsx or .xls files.")
         st.markdown("</div>", unsafe_allow_html=True)
     else:
         st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
