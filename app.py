@@ -5,6 +5,9 @@ from pathlib import Path
 import time
 from datetime import datetime
 import json
+import plotly.graph_objects as go
+import plotly.express as px
+from plotly.subplots import make_subplots
 
 # Check for required dependencies
 try:
@@ -18,6 +21,18 @@ try:
     XLRD_AVAILABLE = True
 except ImportError:
     XLRD_AVAILABLE = False
+
+try:
+    import PyPDF2
+    PYPDF2_AVAILABLE = True
+except ImportError:
+    PYPDF2_AVAILABLE = False
+
+try:
+    from pdf2image import convert_from_path
+    PDF2IMAGE_AVAILABLE = True
+except ImportError:
+    PDF2IMAGE_AVAILABLE = False
 
 # Page configuration
 st.set_page_config(
@@ -199,6 +214,22 @@ st.markdown("""
         from { opacity: 0; transform: translateY(10px); }
         to { opacity: 1; transform: translateY(0); }
     }
+    
+    /* PDF Viewer */
+    .pdf-container {
+        background: #1a1f2e;
+        border: 1px solid #2d3347;
+        border-radius: 8px;
+        padding: 1rem;
+        text-align: center;
+    }
+    
+    .pdf-page {
+        max-width: 100%;
+        height: auto;
+        border-radius: 4px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -214,7 +245,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Improved custom CSS for selectbox: make selected value and dropdown options white, remove dark background from selected value
+# Improved custom CSS for selectbox
 st.markdown("""
 <style>
 .stSelectbox > div > div > select {
@@ -263,6 +294,10 @@ if 'data_insights' not in st.session_state:
     st.session_state.data_insights = {}
 if 'user_email' not in st.session_state:
     st.session_state.user_email = None
+if 'file_type' not in st.session_state:
+    st.session_state.file_type = None
+if 'pdf_page' not in st.session_state:
+    st.session_state.pdf_page = 1
 
 def authenticate(email):
     """Authenticate user with @in.ey.com email"""
@@ -270,33 +305,36 @@ def authenticate(email):
         return False
     return email.strip().lower().endswith('@in.ey.com')
 
-def get_excel_files():
-    """Get all Excel files in the current directory"""
-    excel_files = []
+def get_files():
+    """Get all Excel and PDF files in the current directory"""
+    files = []
     try:
-        # Check for .xlsx files only if openpyxl is available
+        # Check for Excel files
         if OPENPYXL_AVAILABLE:
             for file in Path('.').glob('*.xlsx'):
                 if not file.name.startswith('~') and not file.name.startswith('.'):
-                    excel_files.append(file.name)
+                    files.append(file.name)
         
-        # Check for .xls files only if xlrd is available
         if XLRD_AVAILABLE:
             for file in Path('.').glob('*.xls'):
                 if not file.name.startswith('~') and not file.name.startswith('.'):
-                    excel_files.append(file.name)
+                    files.append(file.name)
+        
+        # Check for PDF files
+        for file in Path('.').glob('*.pdf'):
+            if not file.name.startswith('~') and not file.name.startswith('.'):
+                files.append(file.name)
         
         if not OPENPYXL_AVAILABLE and not XLRD_AVAILABLE:
             st.error("⚠️ No Excel libraries found. Please install 'openpyxl' for .xlsx files or 'xlrd' for .xls files.")
             st.code("pip install openpyxl", language="bash")
             
     except Exception as e:
-        st.error(f"Error scanning for Excel files: {str(e)}")
-    return sorted(excel_files)
+        st.error(f"Error scanning for files: {str(e)}")
+    return sorted(files)
 
 def load_excel_file(filename):
     """Load Excel file with all sheets"""
-    # Check dependencies first
     file_ext = Path(filename).suffix.lower()
     
     if file_ext == '.xlsx' and not OPENPYXL_AVAILABLE:
@@ -310,7 +348,6 @@ def load_excel_file(filename):
         return None
     
     try:
-        # Specify engine based on file type
         engine = 'openpyxl' if file_ext == '.xlsx' else 'xlrd'
         excel_file = pd.ExcelFile(filename, engine=engine)
         data = {}
@@ -318,7 +355,6 @@ def load_excel_file(filename):
         for sheet_name in excel_file.sheet_names:
             try:
                 df = pd.read_excel(filename, sheet_name=sheet_name, engine=engine)
-                # Handle empty sheets
                 if df.empty:
                     st.warning(f"Sheet '{sheet_name}' is empty")
                     continue
@@ -331,12 +367,6 @@ def load_excel_file(filename):
             st.error("No valid sheets found in the Excel file")
             return None
         return data
-    except FileNotFoundError:
-        st.error(f"⚠️ File not found: {filename}")
-        return None
-    except PermissionError:
-        st.error(f"⚠️ Permission denied: Cannot access {filename}")
-        return None
     except Exception as e:
         st.error(f"⚠️ Error loading file: {str(e)}")
         return None
@@ -352,7 +382,7 @@ def calculate_insights(data):
                 'numeric_columns': len(df.select_dtypes(include=['number']).columns),
                 'text_columns': len(df.select_dtypes(include=['object']).columns),
                 'missing_values': int(df.isnull().sum().sum()),
-                'memory_usage': df.memory_usage(deep=True).sum() / 1024 / 1024  # MB
+                'memory_usage': df.memory_usage(deep=True).sum() / 1024 / 1024
             }
         except Exception as e:
             st.warning(f"Could not calculate insights for '{sheet_name}': {str(e)}")
@@ -390,6 +420,125 @@ def apply_filter(df, column, filter_values):
     except Exception as e:
         st.warning(f"Could not apply filter on column '{column}': {str(e)}")
         return df
+
+def get_color_palette(n):
+    """Generate distinct colors for graphs"""
+    colors = [
+        '#667eea', '#764ba2', '#f093fb', '#4facfe',
+        '#43e97b', '#fa709a', '#fee140', '#30cfd0',
+        '#a8edea', '#fed6e3', '#c471f5', '#fa71cd',
+        '#f38181', '#ffc75f', '#d8b5ff', '#1dd1a1',
+        '#ee5a6f', '#f0932b', '#6c5ce7', '#00b894'
+    ]
+    return colors[:n] if n <= len(colors) else colors * (n // len(colors) + 1)
+
+def create_visualization(df, time_col, category_col, value_cols, chart_type, selected_categories=None):
+    """Create visualization based on user selections"""
+    try:
+        # Filter by selected categories if specified
+        if selected_categories and len(selected_categories) > 0:
+            df_filtered = df[df[category_col].isin(selected_categories)].copy()
+        else:
+            df_filtered = df.copy()
+        
+        if df_filtered.empty:
+            st.warning("No data available for selected categories")
+            return None
+        
+        # Sort by time column
+        df_filtered = df_filtered.sort_values(time_col)
+        
+        # Create figure
+        fig = go.Figure()
+        
+        # Get colors
+        categories = df_filtered[category_col].unique()
+        colors = get_color_palette(len(categories))
+        color_map = dict(zip(categories, colors))
+        
+        if chart_type == "Line Chart":
+            for category in categories:
+                cat_data = df_filtered[df_filtered[category_col] == category]
+                for value_col in value_cols:
+                    fig.add_trace(go.Scatter(
+                        x=cat_data[time_col],
+                        y=cat_data[value_col],
+                        mode='lines+markers',
+                        name=f"{category} - {value_col}",
+                        line=dict(color=color_map[category], width=2),
+                        marker=dict(size=6)
+                    ))
+        
+        elif chart_type == "Bar Chart":
+            for i, value_col in enumerate(value_cols):
+                for category in categories:
+                    cat_data = df_filtered[df_filtered[category_col] == category]
+                    fig.add_trace(go.Bar(
+                        x=cat_data[time_col],
+                        y=cat_data[value_col],
+                        name=f"{category} - {value_col}",
+                        marker_color=color_map[category]
+                    ))
+        
+        elif chart_type == "Area Chart":
+            for category in categories:
+                cat_data = df_filtered[df_filtered[category_col] == category]
+                for value_col in value_cols:
+                    fig.add_trace(go.Scatter(
+                        x=cat_data[time_col],
+                        y=cat_data[value_col],
+                        mode='lines',
+                        name=f"{category} - {value_col}",
+                        fill='tonexty',
+                        line=dict(color=color_map[category], width=2)
+                    ))
+        
+        elif chart_type == "Scatter Plot":
+            for category in categories:
+                cat_data = df_filtered[df_filtered[category_col] == category]
+                for value_col in value_cols:
+                    fig.add_trace(go.Scatter(
+                        x=cat_data[time_col],
+                        y=cat_data[value_col],
+                        mode='markers',
+                        name=f"{category} - {value_col}",
+                        marker=dict(
+                            color=color_map[category],
+                            size=10,
+                            line=dict(width=1, color='white')
+                        )
+                    ))
+        
+        # Update layout for dark theme
+        fig.update_layout(
+            plot_bgcolor='#0f1117',
+            paper_bgcolor='#1a1f2e',
+            font=dict(color='#e6e6e6'),
+            xaxis=dict(
+                gridcolor='#2d3347',
+                showgrid=True,
+                title=time_col
+            ),
+            yaxis=dict(
+                gridcolor='#2d3347',
+                showgrid=True,
+                title='Value'
+            ),
+            hovermode='x unified',
+            legend=dict(
+                bgcolor='rgba(26, 31, 46, 0.8)',
+                bordercolor='#2d3347',
+                borderwidth=1
+            ),
+            margin=dict(l=50, r=50, t=50, b=50),
+            height=500
+        )
+        
+        return fig
+    
+    except Exception as e:
+        st.error(f"Error creating visualization: {str(e)}")
+        return None
 
 # ============================================================================
 # LOGIN PAGE
@@ -430,7 +579,6 @@ if not st.session_state.authenticated:
         
         st.markdown("</div>", unsafe_allow_html=True)
         
-        # Status indicator
         st.markdown("<br>", unsafe_allow_html=True)
         st.markdown(
             "<div style='text-align: center; color: #a0a0b0;'>"
@@ -447,7 +595,6 @@ if not st.session_state.authenticated:
 elif st.session_state.stage == 'file_selection':
     st.markdown("<div class='fade-in'>", unsafe_allow_html=True)
     
-    # Header with user info
     col1, col2 = st.columns([3, 1])
     with col1:
         st.markdown("<h1 class='main-title'>📚 Research Library</h1>", unsafe_allow_html=True)
@@ -462,49 +609,28 @@ elif st.session_state.stage == 'file_selection':
                 unsafe_allow_html=True
             )
     
-    # Check for dependencies and show warnings
-    if not OPENPYXL_AVAILABLE or not XLRD_AVAILABLE:
-        st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
-        st.warning("⚠️ Missing Excel dependencies")
-        
-        if not OPENPYXL_AVAILABLE:
-            st.markdown("**Missing: openpyxl** (required for .xlsx files)")
-            st.code("pip install openpyxl", language="bash")
-        
-        if not XLRD_AVAILABLE:
-            st.markdown("**Missing: xlrd** (required for .xls files)")
-            st.code("pip install xlrd", language="bash")
-        
-        st.markdown("</div>", unsafe_allow_html=True)
-        st.markdown("<br>", unsafe_allow_html=True)
+    files = get_files()
     
-    excel_files = get_excel_files()
-    
-    if not excel_files:
+    if not files:
         st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
-        if not OPENPYXL_AVAILABLE and not XLRD_AVAILABLE:
-            st.error("⚠️ Cannot scan for Excel files. Please install required dependencies.")
-        else:
-            st.warning("⚠️ No Excel files found in the current directory. Please add .xlsx or .xls files.")
+        st.warning("⚠️ No files found in the current directory. Please add .xlsx, .xls, or .pdf files.")
         st.markdown("</div>", unsafe_allow_html=True)
     else:
-        # File stats
         st.markdown(f"<div class='stat-label'>AVAILABLE DATASETS</div>", unsafe_allow_html=True)
-        st.markdown(f"<div class='stat-number'>{len(excel_files)}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='stat-number'>{len(files)}</div>", unsafe_allow_html=True)
         
         st.markdown("<br>", unsafe_allow_html=True)
         
         selected_file = st.selectbox(
             "Choose your research file",
-            excel_files,
+            files,
             key="file_selector"
         )
         
-        # Show file info
         if selected_file:
             try:
                 file_path = Path(selected_file)
-                file_size = file_path.stat().st_size / 1024 / 1024  # MB
+                file_size = file_path.stat().st_size / 1024 / 1024
                 file_modified = datetime.fromtimestamp(file_path.stat().st_mtime)
                 
                 col1, col2, col3 = st.columns(3)
@@ -524,9 +650,63 @@ elif st.session_state.stage == 'file_selection':
         with col2:
             if st.button("🔍 EXPLORE DATA", use_container_width=True):
                 st.session_state.selected_file = selected_file
-                st.session_state.stage = 'filter_setup'
+                file_ext = Path(selected_file).suffix.lower()
+                st.session_state.file_type = file_ext
+                
+                if file_ext == '.pdf':
+                    st.session_state.stage = 'pdf_view'
+                else:
+                    st.session_state.stage = 'filter_setup'
+                
                 time.sleep(0.3)
                 st.rerun()
+    
+    st.markdown("</div>", unsafe_allow_html=True)
+
+# ============================================================================
+# PDF VIEW PAGE
+# ============================================================================
+elif st.session_state.stage == 'pdf_view':
+    st.markdown("<div class='fade-in'>", unsafe_allow_html=True)
+    
+    col1, col2 = st.columns([4, 1])
+    with col1:
+        st.markdown("<h1 class='main-title'>📄 PDF Viewer</h1>", unsafe_allow_html=True)
+        st.markdown(f"<p class='subtitle'><code>{st.session_state.selected_file}</code></p>", unsafe_allow_html=True)
+    with col2:
+        if st.button("◀ Back", use_container_width=True):
+            st.session_state.stage = 'file_selection'
+            st.session_state.selected_file = None
+            st.session_state.pdf_page = 1
+            st.rerun()
+    
+    try:
+        # Display PDF using iframe
+        with open(st.session_state.selected_file, "rb") as f:
+            base64_pdf = __import__('base64').b64encode(f.read()).decode('utf-8')
+        
+        pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="800" type="application/pdf"></iframe>'
+        
+        st.markdown("<div class='pdf-container'>", unsafe_allow_html=True)
+        st.markdown(pdf_display, unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+        
+        # Download option
+        st.markdown("<br>", unsafe_allow_html=True)
+        col1, col2, col3 = st.columns([2, 1, 2])
+        with col2:
+            with open(st.session_state.selected_file, "rb") as pdf_file:
+                st.download_button(
+                    label="📥 Download PDF",
+                    data=pdf_file,
+                    file_name=st.session_state.selected_file,
+                    mime="application/pdf",
+                    use_container_width=True
+                )
+    
+    except Exception as e:
+        st.error(f"Error loading PDF: {str(e)}")
+        st.info("Your browser may not support embedded PDF viewing. Please use the download button to view the file.")
     
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -542,7 +722,6 @@ elif st.session_state.stage == 'filter_setup':
         unsafe_allow_html=True
     )
     
-    # Load Excel data
     if st.session_state.excel_data is None:
         with st.spinner("🔄 Loading data..."):
             st.session_state.excel_data = load_excel_file(st.session_state.selected_file)
@@ -556,18 +735,15 @@ elif st.session_state.stage == 'filter_setup':
                     st.rerun()
     
     if st.session_state.excel_data:
-        # Show data overview
         st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
         
         st.markdown("### 📊 Data Overview")
         
-        # Create visualization summary
         summary = create_overview_summary(st.session_state.data_insights)
         st.markdown(summary)
         
         st.markdown("<br>", unsafe_allow_html=True)
         
-        # Summary stats
         total_rows = sum(insight['total_rows'] for insight in st.session_state.data_insights.values())
         total_sheets = len(st.session_state.excel_data)
         
@@ -587,7 +763,6 @@ elif st.session_state.stage == 'filter_setup':
         
         st.markdown("<br>", unsafe_allow_html=True)
         
-        # Filter configuration
         st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
         
         st.markdown("### 🎯 Filter Configuration")
@@ -641,7 +816,6 @@ elif st.session_state.stage == 'filter_setup':
 elif st.session_state.stage == 'data_view':
     st.markdown("<div class='fade-in'>", unsafe_allow_html=True)
     
-    # Header with navigation
     col1, col2 = st.columns([4, 1])
     with col1:
         st.markdown("<h1 class='main-title'>📊 Data Explorer</h1>", unsafe_allow_html=True)
@@ -659,26 +833,25 @@ elif st.session_state.stage == 'data_view':
     if st.session_state.excel_data:
         sheet_names = list(st.session_state.excel_data.keys())
         
-        # Create tabs for sheets
-        tabs = st.tabs([f"📄 {name}" for name in sheet_names])
+        # Create tabs - add Visualizations tab
+        tab_labels = [f"📄 {name}" for name in sheet_names] + ["📈 Visualizations"]
+        tabs = st.tabs(tab_labels)
         
-        for idx, (tab, sheet_name) in enumerate(zip(tabs, sheet_names)):
-            with tab:
+        # Data tabs
+        for idx, sheet_name in enumerate(sheet_names):
+            with tabs[idx]:
                 df = st.session_state.excel_data[sheet_name].copy()
                 original_count = len(df)
                 
-                # Show filters for this sheet if configured
                 if sheet_name in st.session_state.filters_config:
                     st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
                     st.markdown("### 🔍 Active Filters")
                     
                     filter_columns = st.session_state.filters_config[sheet_name]
                     
-                    # Initialize active filters for this sheet if not exists
                     if sheet_name not in st.session_state.active_filters:
                         st.session_state.active_filters[sheet_name] = {}
                     
-                    # Create filter columns
                     num_filters = len(filter_columns)
                     filter_cols = st.columns(min(num_filters, 3))
                     
@@ -687,7 +860,6 @@ elif st.session_state.stage == 'data_view':
                             try:
                                 unique_values = sorted(df[filter_col].dropna().unique().tolist())
                                 
-                                # Limit displayed unique values if too many
                                 if len(unique_values) > 1000:
                                     st.warning(f"⚠️ Column '{filter_col}' has {len(unique_values)} unique values. Filter may be slow.")
                                 
@@ -700,13 +872,11 @@ elif st.session_state.stage == 'data_view':
                                 
                                 st.session_state.active_filters[sheet_name][filter_col] = selected_values
                                 
-                                # Apply filter
                                 if selected_values:
                                     df = apply_filter(df, filter_col, selected_values)
                             except Exception as e:
                                 st.error(f"Error creating filter for '{filter_col}': {str(e)}")
                     
-                    # Clear filters button
                     if any(st.session_state.active_filters[sheet_name].values()):
                         if st.button("🔄 Clear All Filters", key=f"clear_{sheet_name}"):
                             st.session_state.active_filters[sheet_name] = {}
@@ -715,7 +885,6 @@ elif st.session_state.stage == 'data_view':
                     st.markdown("</div>", unsafe_allow_html=True)
                     st.markdown("<br>", unsafe_allow_html=True)
                 
-                # Data statistics card
                 st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
                 
                 col1, col2, col3, col4 = st.columns(4)
@@ -739,10 +908,8 @@ elif st.session_state.stage == 'data_view':
                 
                 st.markdown("<br>", unsafe_allow_html=True)
                 
-                # Data table
                 st.markdown("### 📋 Data Table")
                 
-                # Search functionality
                 search_term = st.text_input(
                     "🔍 Search in table",
                     key=f"search_{sheet_name}",
@@ -753,7 +920,6 @@ elif st.session_state.stage == 'data_view':
                 
                 if search_term:
                     try:
-                        # Search across all columns
                         mask = display_df.astype(str).apply(
                             lambda x: x.str.contains(search_term, case=False, na=False, regex=False)
                         ).any(axis=1)
@@ -763,7 +929,6 @@ elif st.session_state.stage == 'data_view':
                         st.error(f"Search error: {str(e)}")
                         display_df = df.copy()
                 
-                # Display dataframe with error handling
                 try:
                     st.dataframe(
                         display_df,
@@ -779,7 +944,6 @@ elif st.session_state.stage == 'data_view':
                         height=500
                     )
                 
-                # Download button
                 st.markdown("<br>", unsafe_allow_html=True)
                 
                 col1, col2, col3 = st.columns([2, 1, 2])
@@ -798,10 +962,180 @@ elif st.session_state.stage == 'data_view':
                         st.error(f"Error preparing download: {str(e)}")
                 
                 st.markdown("</div>", unsafe_allow_html=True)
+        
+        # Visualizations tab
+        with tabs[-1]:
+            st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+            st.markdown("### 📊 Trend-Based Analysis")
+            st.markdown("Create custom visualizations to analyze trends across your data")
+            st.markdown("</div>", unsafe_allow_html=True)
+            
+            st.markdown("<br>", unsafe_allow_html=True)
+            
+            # Sheet selection for visualization
+            st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+            st.markdown("#### 1️⃣ Select Data Source")
+            
+            viz_sheet = st.selectbox(
+                "Choose sheet for visualization",
+                sheet_names,
+                key="viz_sheet_select"
+            )
+            
+            if viz_sheet:
+                df_viz = st.session_state.excel_data[viz_sheet].copy()
+                
+                # Apply active filters if any
+                if viz_sheet in st.session_state.active_filters:
+                    for filter_col, filter_vals in st.session_state.active_filters[viz_sheet].items():
+                        if filter_vals:
+                            df_viz = apply_filter(df_viz, filter_col, filter_vals)
+                
+                st.info(f"📊 Working with {len(df_viz):,} rows from '{viz_sheet}'")
+                
+                st.markdown("</div>", unsafe_allow_html=True)
+                st.markdown("<br>", unsafe_allow_html=True)
+                
+                # Column configuration
+                st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+                st.markdown("#### 2️⃣ Configure Chart Parameters")
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    # Time/X-axis column
+                    all_columns = df_viz.columns.tolist()
+                    time_col = st.selectbox(
+                        "📅 Select Time/X-axis Column",
+                        all_columns,
+                        key="time_column",
+                        help="Select the column to use for the X-axis (usually time, date, or sequence)"
+                    )
+                
+                with col2:
+                    # Category column
+                    category_col = st.selectbox(
+                        "🏷️ Select Category Column",
+                        all_columns,
+                        key="category_column",
+                        help="Select the column to group data by (e.g., product, region, type)"
+                    )
+                
+                st.markdown("</div>", unsafe_allow_html=True)
+                st.markdown("<br>", unsafe_allow_html=True)
+                
+                if time_col and category_col:
+                    # Category selection
+                    st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+                    st.markdown("#### 3️⃣ Select Categories to Display")
+                    
+                    try:
+                        available_categories = sorted(df_viz[category_col].dropna().unique().tolist())
+                        
+                        if len(available_categories) > 50:
+                            st.warning(f"⚠️ {len(available_categories)} categories available. Consider selecting a subset for better visualization.")
+                        
+                        selected_categories = st.multiselect(
+                            f"Choose categories from '{category_col}'",
+                            available_categories,
+                            default=available_categories[:min(5, len(available_categories))],
+                            key="selected_categories",
+                            help="Select which categories you want to see in the chart"
+                        )
+                        
+                        st.markdown("</div>", unsafe_allow_html=True)
+                        st.markdown("<br>", unsafe_allow_html=True)
+                        
+                        if selected_categories:
+                            # Value columns selection
+                            st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+                            st.markdown("#### 4️⃣ Select Values to Plot")
+                            
+                            # Get numeric columns
+                            numeric_columns = df_viz.select_dtypes(include=['number']).columns.tolist()
+                            
+                            if not numeric_columns:
+                                st.warning("⚠️ No numeric columns found for plotting. Please select a different sheet.")
+                            else:
+                                value_cols = st.multiselect(
+                                    "📈 Select value columns to plot",
+                                    numeric_columns,
+                                    default=[numeric_columns[0]] if numeric_columns else [],
+                                    key="value_columns",
+                                    help="Select one or more numeric columns to visualize"
+                                )
+                                
+                                st.markdown("</div>", unsafe_allow_html=True)
+                                st.markdown("<br>", unsafe_allow_html=True)
+                                
+                                if value_cols:
+                                    # Chart type selection
+                                    st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+                                    st.markdown("#### 5️⃣ Select Chart Type")
+                                    
+                                    col1, col2, col3, col4 = st.columns(4)
+                                    
+                                    with col1:
+                                        if st.button("📈 Line Chart", use_container_width=True):
+                                            st.session_state.chart_type = "Line Chart"
+                                    
+                                    with col2:
+                                        if st.button("📊 Bar Chart", use_container_width=True):
+                                            st.session_state.chart_type = "Bar Chart"
+                                    
+                                    with col3:
+                                        if st.button("📉 Area Chart", use_container_width=True):
+                                            st.session_state.chart_type = "Area Chart"
+                                    
+                                    with col4:
+                                        if st.button("⚫ Scatter Plot", use_container_width=True):
+                                            st.session_state.chart_type = "Scatter Plot"
+                                    
+                                    st.markdown("</div>", unsafe_allow_html=True)
+                                    st.markdown("<br>", unsafe_allow_html=True)
+                                    
+                                    # Display chart
+                                    if 'chart_type' in st.session_state:
+                                        st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+                                        st.markdown(f"### {st.session_state.chart_type}")
+                                        
+                                        with st.spinner("🎨 Creating visualization..."):
+                                            fig = create_visualization(
+                                                df_viz,
+                                                time_col,
+                                                category_col,
+                                                value_cols,
+                                                st.session_state.chart_type,
+                                                selected_categories
+                                            )
+                                            
+                                            if fig:
+                                                st.plotly_chart(fig, use_container_width=True)
+                                                
+                                                # Download chart
+                                                st.markdown("<br>", unsafe_allow_html=True)
+                                                col1, col2, col3 = st.columns([2, 1, 2])
+                                                with col2:
+                                                    try:
+                                                        img_bytes = fig.to_image(format="png")
+                                                        st.download_button(
+                                                            label="📥 Download Chart",
+                                                            data=img_bytes,
+                                                            file_name=f"chart_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png",
+                                                            mime="image/png",
+                                                            use_container_width=True
+                                                        )
+                                                    except:
+                                                        st.info("💡 Tip: Right-click on the chart to download it")
+                                        
+                                        st.markdown("</div>", unsafe_allow_html=True)
+                    
+                    except Exception as e:
+                        st.error(f"Error in visualization setup: {str(e)}")
     
     st.markdown("</div>", unsafe_allow_html=True)
     
-    # Footer with timestamp
+    # Footer
     st.markdown("<br><br>", unsafe_allow_html=True)
     st.markdown(
         f"<div style='text-align: center; color: #7C7C8C; font-size: 0.85rem;'>"
