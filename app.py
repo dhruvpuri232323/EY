@@ -214,6 +214,38 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# Improved custom CSS for selectbox: make selected value and dropdown options white, remove dark background from selected value
+st.markdown("""
+<style>
+.stSelectbox > div > div > select {
+    color: #fff !important;
+    background: #fff !important;
+}
+.stSelectbox label {
+    color: #fff !important;
+}
+.stSelectbox > div > div {
+    background: #fff !important;
+    color: #222 !important;
+}
+.stSelectbox > div[data-baseweb="select"] > div {
+    background: #fff !important;
+    color: #222 !important;
+}
+.stSelectbox [data-baseweb="select"] span {
+    color: #222 !important;
+}
+.stSelectbox [data-baseweb="select"] div[role="option"] {
+    color: #222 !important;
+    background: #fff !important;
+}
+.stSelectbox [data-baseweb="select"] div[aria-selected="true"] {
+    color: #fff !important;
+    background: #3b5bdb !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
 # Initialize session state
 if 'authenticated' not in st.session_state:
     st.session_state.authenticated = False
