@@ -2,7 +2,6 @@ streamlit
 pandas
 openpyxl
 plotly
-pip install xlrd
-pip install openpyxl
+xlrd
 
 
