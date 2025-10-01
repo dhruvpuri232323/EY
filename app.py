@@ -48,7 +48,7 @@ st.markdown("""
     }
     
     /* Cards */
-    .card {
+    .card, .glass-card, .stat-card {
         background: #1a1f2e;
         border: 1px solid #2d3347;
         border-radius: 8px;
@@ -108,12 +108,26 @@ st.markdown("""
         margin-top: 0.25rem;
     }
     
-    /* Charts */
-    .js-plotly-plot {
-        background: #1a1f2e !important;
-        border: 1px solid #2d3347 !important;
-        border-radius: 6px !important;
-        padding: 1rem !important;
+    .stat-label {
+        color: #a3a3a3;
+        font-size: 0.85rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    
+    .stat-number {
+        color: #ffffff;
+        font-size: 2rem;
+        font-weight: 600;
+        margin-top: 0.5rem;
+    }
+    
+    .main-title {
+        font-size: 2.5rem;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
     }
     
     /* Tabs */
@@ -150,6 +164,21 @@ st.markdown("""
         background: #4ade80;
         border-radius: 50%;
         margin-right: 0.5rem;
+        animation: pulse 2s infinite;
+    }
+    
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
+    }
+    
+    .fade-in {
+        animation: fadeIn 0.5s ease-in;
+    }
+    
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -173,15 +202,23 @@ if 'user_email' not in st.session_state:
     st.session_state.user_email = None
 
 def authenticate(email):
-    """Authenticate user with @ey.com email"""
+    """Authenticate user with @in.ey.com email"""
+    if not email:
+        return False
     return email.strip().lower().endswith('@in.ey.com')
 
 def get_excel_files():
     """Get all Excel files in the current directory"""
     excel_files = []
-    for file in Path('.').glob('*.xlsx'):
-        if not file.name.startswith('~'):
-            excel_files.append(file.name)
+    try:
+        for file in Path('.').glob('*.xlsx'):
+            if not file.name.startswith('~') and not file.name.startswith('.'):
+                excel_files.append(file.name)
+        for file in Path('.').glob('*.xls'):
+            if not file.name.startswith('~') and not file.name.startswith('.'):
+                excel_files.append(file.name)
+    except Exception as e:
+        st.error(f"Error scanning for Excel files: {str(e)}")
     return sorted(excel_files)
 
 def load_excel_file(filename):
@@ -190,8 +227,27 @@ def load_excel_file(filename):
         excel_file = pd.ExcelFile(filename)
         data = {}
         for sheet_name in excel_file.sheet_names:
-            data[sheet_name] = pd.read_excel(filename, sheet_name=sheet_name)
+            try:
+                df = pd.read_excel(filename, sheet_name=sheet_name)
+                # Handle empty sheets
+                if df.empty:
+                    st.warning(f"Sheet '{sheet_name}' is empty")
+                    continue
+                data[sheet_name] = df
+            except Exception as e:
+                st.warning(f"Could not load sheet '{sheet_name}': {str(e)}")
+                continue
+        
+        if not data:
+            st.error("No valid sheets found in the Excel file")
+            return None
         return data
+    except FileNotFoundError:
+        st.error(f"⚠️ File not found: {filename}")
+        return None
+    except PermissionError:
+        st.error(f"⚠️ Permission denied: Cannot access {filename}")
+        return None
     except Exception as e:
         st.error(f"⚠️ Error loading file: {str(e)}")
         return None
@@ -200,30 +256,51 @@ def calculate_insights(data):
     """Calculate data insights for visualization"""
     insights = {}
     for sheet_name, df in data.items():
-        insights[sheet_name] = {
-            'total_rows': len(df),
-            'total_columns': len(df.columns),
-            'numeric_columns': len(df.select_dtypes(include=['number']).columns),
-            'text_columns': len(df.select_dtypes(include=['object']).columns),
-            'missing_values': df.isnull().sum().sum(),
-            'memory_usage': df.memory_usage(deep=True).sum() / 1024 / 1024  # MB
-        }
+        try:
+            insights[sheet_name] = {
+                'total_rows': len(df),
+                'total_columns': len(df.columns),
+                'numeric_columns': len(df.select_dtypes(include=['number']).columns),
+                'text_columns': len(df.select_dtypes(include=['object']).columns),
+                'missing_values': int(df.isnull().sum().sum()),
+                'memory_usage': df.memory_usage(deep=True).sum() / 1024 / 1024  # MB
+            }
+        except Exception as e:
+            st.warning(f"Could not calculate insights for '{sheet_name}': {str(e)}")
+            insights[sheet_name] = {
+                'total_rows': 0,
+                'total_columns': 0,
+                'numeric_columns': 0,
+                'text_columns': 0,
+                'missing_values': 0,
+                'memory_usage': 0
+            }
     return insights
 
-def create_overview_chart(insights):
-    """Create an overview visualization of all sheets"""
+def create_overview_summary(insights):
+    """Create an overview summary of all sheets"""
+    if not insights:
+        return "No data available"
+    
     sheet_names = list(insights.keys())
     rows = [insights[sheet]['total_rows'] for sheet in sheet_names]
     cols = [insights[sheet]['total_columns'] for sheet in sheet_names]
-    # Instead of chart, return a summary string
-    summary = f"Sheets: {', '.join(sheet_names)}\nRows: {rows}\nColumns: {cols}"
-    return summary
+    
+    summary_parts = []
+    for i, sheet in enumerate(sheet_names):
+        summary_parts.append(f"**{sheet}**: {rows[i]:,} rows × {cols[i]} columns")
+    
+    return " | ".join(summary_parts)
 
 def apply_filter(df, column, filter_values):
     """Apply filter to dataframe"""
-    if filter_values and len(filter_values) > 0:
+    if not filter_values or len(filter_values) == 0:
+        return df
+    try:
         return df[df[column].isin(filter_values)]
-    return df
+    except Exception as e:
+        st.warning(f"Could not apply filter on column '{column}': {str(e)}")
+        return df
 
 # ============================================================================
 # LOGIN PAGE
@@ -288,9 +365,10 @@ elif st.session_state.stage == 'file_selection':
         st.markdown("<p class='subtitle'>Select your dataset to begin exploration</p>", unsafe_allow_html=True)
     with col2:
         if st.session_state.user_email:
+            user_display = st.session_state.user_email.split('@')[0]
             st.markdown(
                 f"<div style='text-align: right; color: #48dbfb; margin-top: 2rem;'>"
-                f"👤 {st.session_state.user_email.split('@')[0]}"
+                f"👤 {user_display}"
                 f"</div>",
                 unsafe_allow_html=True
             )
@@ -299,7 +377,7 @@ elif st.session_state.stage == 'file_selection':
     
     if not excel_files:
         st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
-        st.warning("⚠️ No Excel files found in the repository.")
+        st.warning("⚠️ No Excel files found in the current directory. Please add .xlsx or .xls files.")
         st.markdown("</div>", unsafe_allow_html=True)
     else:
         st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
@@ -318,38 +396,42 @@ elif st.session_state.stage == 'file_selection':
         
         # Show file info
         if selected_file:
-            file_path = Path(selected_file)
-            file_size = file_path.stat().st_size / 1024 / 1024  # MB
-            file_modified = datetime.fromtimestamp(file_path.stat().st_mtime)
-            
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.markdown(
-                    f"<div class='stat-card'>"
-                    f"<div style='color: #a0a0b0; font-size: 0.9rem;'>FILE SIZE</div>"
-                    f"<div style='color: white; font-size: 1.5rem; font-weight: 600; margin-top: 0.5rem;'>"
-                    f"{file_size:.2f} MB</div>"
-                    f"</div>",
-                    unsafe_allow_html=True
-                )
-            with col2:
-                st.markdown(
-                    f"<div class='stat-card'>"
-                    f"<div style='color: #a0a0b0; font-size: 0.9rem;'>LAST MODIFIED</div>"
-                    f"<div style='color: white; font-size: 1.5rem; font-weight: 600; margin-top: 0.5rem;'>"
-                    f"{file_modified.strftime('%d %b')}</div>"
-                    f"</div>",
-                    unsafe_allow_html=True
-                )
-            with col3:
-                st.markdown(
-                    f"<div class='stat-card'>"
-                    f"<div style='color: #a0a0b0; font-size: 0.9rem;'>FORMAT</div>"
-                    f"<div style='color: white; font-size: 1.5rem; font-weight: 600; margin-top: 0.5rem;'>"
-                    f"XLSX</div>"
-                    f"</div>",
-                    unsafe_allow_html=True
-                )
+            try:
+                file_path = Path(selected_file)
+                file_size = file_path.stat().st_size / 1024 / 1024  # MB
+                file_modified = datetime.fromtimestamp(file_path.stat().st_mtime)
+                
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.markdown(
+                        f"<div class='stat-card'>"
+                        f"<div style='color: #a0a0b0; font-size: 0.9rem;'>FILE SIZE</div>"
+                        f"<div style='color: white; font-size: 1.5rem; font-weight: 600; margin-top: 0.5rem;'>"
+                        f"{file_size:.2f} MB</div>"
+                        f"</div>",
+                        unsafe_allow_html=True
+                    )
+                with col2:
+                    st.markdown(
+                        f"<div class='stat-card'>"
+                        f"<div style='color: #a0a0b0; font-size: 0.9rem;'>LAST MODIFIED</div>"
+                        f"<div style='color: white; font-size: 1.5rem; font-weight: 600; margin-top: 0.5rem;'>"
+                        f"{file_modified.strftime('%d %b')}</div>"
+                        f"</div>",
+                        unsafe_allow_html=True
+                    )
+                with col3:
+                    file_ext = file_path.suffix.upper().replace('.', '')
+                    st.markdown(
+                        f"<div class='stat-card'>"
+                        f"<div style='color: #a0a0b0; font-size: 0.9rem;'>FORMAT</div>"
+                        f"<div style='color: white; font-size: 1.5rem; font-weight: 600; margin-top: 0.5rem;'>"
+                        f"{file_ext}</div>"
+                        f"</div>",
+                        unsafe_allow_html=True
+                    )
+            except Exception as e:
+                st.error(f"Error reading file information: {str(e)}")
         
         st.markdown("<br><br>", unsafe_allow_html=True)
         
@@ -383,6 +465,12 @@ elif st.session_state.stage == 'filter_setup':
             st.session_state.excel_data = load_excel_file(st.session_state.selected_file)
             if st.session_state.excel_data:
                 st.session_state.data_insights = calculate_insights(st.session_state.excel_data)
+            else:
+                st.error("Failed to load Excel file. Please go back and try again.")
+                if st.button("◀ Back to File Selection"):
+                    st.session_state.stage = 'file_selection'
+                    st.session_state.selected_file = None
+                    st.rerun()
     
     if st.session_state.excel_data:
         # Show data overview
@@ -390,9 +478,11 @@ elif st.session_state.stage == 'filter_setup':
         
         st.markdown("### 📊 Data Overview")
         
-        # Create visualization
-        summary = create_overview_chart(st.session_state.data_insights)
-        st.write(summary)
+        # Create visualization summary
+        summary = create_overview_summary(st.session_state.data_insights)
+        st.markdown(summary)
+        
+        st.markdown("<br>", unsafe_allow_html=True)
         
         # Summary stats
         total_rows = sum(insight['total_rows'] for insight in st.session_state.data_insights.values())
@@ -455,8 +545,12 @@ elif st.session_state.stage == 'filter_setup':
             filters_config = {}
             
             for sheet_name, df in st.session_state.excel_data.items():
-                with st.expander(f"📄 {sheet_name} ({len(df)} rows)", expanded=False):
+                with st.expander(f"📄 {sheet_name} ({len(df):,} rows)", expanded=False):
                     columns = df.columns.tolist()
+                    if not columns:
+                        st.warning(f"No columns found in {sheet_name}")
+                        continue
+                    
                     selected_columns = st.multiselect(
                         f"Select filter columns for {sheet_name}",
                         columns,
@@ -531,20 +625,27 @@ elif st.session_state.stage == 'data_view':
                     
                     for col_idx, filter_col in enumerate(filter_columns):
                         with filter_cols[col_idx % 3]:
-                            unique_values = df[filter_col].dropna().unique().tolist()
-                            
-                            selected_values = st.multiselect(
-                                filter_col,
-                                unique_values,
-                                key=f"active_filter_{sheet_name}_{filter_col}",
-                                default=st.session_state.active_filters[sheet_name].get(filter_col, [])
-                            )
-                            
-                            st.session_state.active_filters[sheet_name][filter_col] = selected_values
-                            
-                            # Apply filter
-                            if selected_values:
-                                df = apply_filter(df, filter_col, selected_values)
+                            try:
+                                unique_values = sorted(df[filter_col].dropna().unique().tolist())
+                                
+                                # Limit displayed unique values if too many
+                                if len(unique_values) > 1000:
+                                    st.warning(f"⚠️ Column '{filter_col}' has {len(unique_values)} unique values. Filter may be slow.")
+                                
+                                selected_values = st.multiselect(
+                                    filter_col,
+                                    unique_values,
+                                    key=f"active_filter_{sheet_name}_{filter_col}",
+                                    default=st.session_state.active_filters[sheet_name].get(filter_col, [])
+                                )
+                                
+                                st.session_state.active_filters[sheet_name][filter_col] = selected_values
+                                
+                                # Apply filter
+                                if selected_values:
+                                    df = apply_filter(df, filter_col, selected_values)
+                            except Exception as e:
+                                st.error(f"Error creating filter for '{filter_col}': {str(e)}")
                     
                     # Clear filters button
                     if any(st.session_state.active_filters[sheet_name].values()):
@@ -615,72 +716,28 @@ elif st.session_state.stage == 'data_view':
                         
                         for i, col in enumerate(numeric_cols[:4]):
                             with insight_cols[i]:
-                                avg_val = df[col].mean()
-                                st.markdown(
-                                    f"<div style='background: rgba(120, 119, 198, 0.1); "
-                                    f"padding: 1rem; border-radius: 12px; "
-                                    f"border: 1px solid rgba(120, 119, 198, 0.3);'>"
-                                    f"<div style='color: #a0a0b0; font-size: 0.8rem;'>{col}</div>"
-                                    f"<div style='color: white; font-size: 1.3rem; font-weight: 600; margin-top: 0.5rem;'>"
-                                    f"{avg_val:,.2f}</div>"
-                                    f"<div style='color: #48dbfb; font-size: 0.8rem;'>Average</div>"
-                                    f"</div>",
-                                    unsafe_allow_html=True
-                                )
+                                try:
+                                    avg_val = df[col].mean()
+                                    if pd.notna(avg_val):
+                                        st.markdown(
+                                            f"<div style='background: rgba(120, 119, 198, 0.1); "
+                                            f"padding: 1rem; border-radius: 12px; "
+                                            f"border: 1px solid rgba(120, 119, 198, 0.3);'>"
+                                            f"<div style='color: #a0a0b0; font-size: 0.8rem;'>{col}</div>"
+                                            f"<div style='color: white; font-size: 1.3rem; font-weight: 600; margin-top: 0.5rem;'>"
+                                            f"{avg_val:,.2f}</div>"
+                                            f"<div style='color: #48dbfb; font-size: 0.8rem;'>Average</div>"
+                                            f"</div>",
+                                            unsafe_allow_html=True
+                                        )
+                                except Exception as e:
+                                    st.warning(f"Could not calculate average for {col}")
                         
                         st.markdown("<br>", unsafe_allow_html=True)
+                    else:
+                        st.info("No numeric columns found for insights")
                 
                 st.markdown("<br>", unsafe_allow_html=True)
                 
                 # Data table
-                st.markdown("### 📋 Data Table")
-                
-                # Search functionality
-                search_term = st.text_input(
-                    "🔍 Search in table",
-                    key=f"search_{sheet_name}",
-                    placeholder="Type to search..."
-                )
-                
-                if search_term:
-                    # Search across all columns
-                    mask = df.astype(str).apply(
-                        lambda x: x.str.contains(search_term, case=False, na=False)
-                    ).any(axis=1)
-                    df = df[mask]
-                    st.info(f"Found {len(df)} matching rows")
-                
-                st.dataframe(
-                    df,
-                    use_container_width=True,
-                    height=500
-                )
-                
-                # Download button
-                st.markdown("<br>", unsafe_allow_html=True)
-                
-                col1, col2, col3 = st.columns([2, 1, 2])
-                with col2:
-                    csv = df.to_csv(index=False).encode('utf-8')
-                    st.download_button(
-                        label="📥 Download Filtered Data",
-                        data=csv,
-                        file_name=f"{sheet_name}_filtered.csv",
-                        mime="text/csv",
-                        use_container_width=True
-                    )
-                
-                st.markdown("</div>", unsafe_allow_html=True)
-    
-    st.markdown("</div>", unsafe_allow_html=True)
-    
-    # Footer with timestamp
-    st.markdown("<br><br>", unsafe_allow_html=True)
-    st.markdown(
-        f"<div style='text-align: center; color: #7C7C8C; font-size: 0.85rem;'>"
-        f"Last updated: {datetime.now().strftime('%d %B %Y, %H:%M:%S')} | "
-        f"<span class='status-dot'></span>Session active"
-        f"</div>",
-        unsafe_allow_html=True
-    )
-
+                st.markdown("### 📋
