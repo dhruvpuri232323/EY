@@ -740,4 +740,73 @@ elif st.session_state.stage == 'data_view':
                 st.markdown("<br>", unsafe_allow_html=True)
                 
                 # Data table
-                st.markdown("### 📋
+                st.markdown("### 📋 Data Table")
+                
+                # Search functionality
+                search_term = st.text_input(
+                    "🔍 Search in table",
+                    key=f"search_{sheet_name}",
+                    placeholder="Type to search..."
+                )
+                
+                display_df = df.copy()
+                
+                if search_term:
+                    try:
+                        # Search across all columns
+                        mask = display_df.astype(str).apply(
+                            lambda x: x.str.contains(search_term, case=False, na=False, regex=False)
+                        ).any(axis=1)
+                        display_df = display_df[mask]
+                        st.info(f"Found {len(display_df):,} matching rows")
+                    except Exception as e:
+                        st.error(f"Search error: {str(e)}")
+                        display_df = df.copy()
+                
+                # Display dataframe with error handling
+                try:
+                    st.dataframe(
+                        display_df,
+                        use_container_width=True,
+                        height=500
+                    )
+                except Exception as e:
+                    st.error(f"Error displaying data: {str(e)}")
+                    st.write("Attempting to display first 1000 rows...")
+                    st.dataframe(
+                        display_df.head(1000),
+                        use_container_width=True,
+                        height=500
+                    )
+                
+                # Download button
+                st.markdown("<br>", unsafe_allow_html=True)
+                
+                col1, col2, col3 = st.columns([2, 1, 2])
+                with col2:
+                    try:
+                        csv = display_df.to_csv(index=False).encode('utf-8')
+                        st.download_button(
+                            label="📥 Download Filtered Data",
+                            data=csv,
+                            file_name=f"{sheet_name}_filtered_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                            mime="text/csv",
+                            use_container_width=True,
+                            key=f"download_{sheet_name}"
+                        )
+                    except Exception as e:
+                        st.error(f"Error preparing download: {str(e)}")
+                
+                st.markdown("</div>", unsafe_allow_html=True)
+    
+    st.markdown("</div>", unsafe_allow_html=True)
+    
+    # Footer with timestamp
+    st.markdown("<br><br>", unsafe_allow_html=True)
+    st.markdown(
+        f"<div style='text-align: center; color: #7C7C8C; font-size: 0.85rem;'>"
+        f"Last updated: {datetime.now().strftime('%d %B %Y, %H:%M:%S')} | "
+        f"<span class='status-dot'></span>Session active"
+        f"</div>",
+        unsafe_allow_html=True
+    )
