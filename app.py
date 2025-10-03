@@ -705,36 +705,20 @@ elif st.session_state.stage == 'pdf_view':
         
         # PDF viewer using embedded iframe with base64
         st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
-        
-        # Display PDF using Streamlit's native capability
         st.markdown("### 📄 PDF Document")
         st.markdown("<p style='color: #a3a3a3; font-size: 0.9rem;'>If the PDF doesn't display properly, use the download button below</p>", unsafe_allow_html=True)
         
-        # Method 1: Try direct display with st components
-        try:
-            # Create an HTML embed for the PDF
-            pdf_display = f"""
-                <div style="width: 100%; height: 800px; border: 1px solid #2d3347; border-radius: 8px; overflow: hidden;">
-                    <embed src="data:application/pdf;base64,{base64_pdf}" 
-                           type="application/pdf" 
-                           width="100%" 
-                           height="100%"
-                           style="border: none;">
-                </div>
-            """
-            st.markdown(pdf_display, unsafe_allow_html=True)
-        except:
-            # Fallback: Show iframe
-            pdf_viewer_html = f"""
-            <iframe 
-                src="data:application/pdf;base64,{base64_pdf}#toolbar=1&navpanes=1&scrollbar=1" 
-                width="100%" 
-                height="800px" 
-                type="application/pdf"
-                style="border: 1px solid #2d3347; border-radius: 4px;">
-            </iframe>
-            """
-            st.markdown(pdf_viewer_html, unsafe_allow_html=True)
+        # Standard PDF viewer (no flipbook)
+        pdf_display = f"""
+            <div style="width: 100%; height: 800px; border: 1px solid #2d3347; border-radius: 8px; overflow: hidden;">
+                <embed src="data:application/pdf;base64,{base64_pdf}" 
+                       type="application/pdf" 
+                       width="100%" 
+                       height="100%"
+                       style="border: none;">
+            </div>
+        """
+        st.markdown(pdf_display, unsafe_allow_html=True)
         
         st.markdown("</div>", unsafe_allow_html=True)
         
@@ -1296,3 +1280,4 @@ elif st.session_state.stage == 'data_view':
         f"</div>",
         unsafe_allow_html=True
     )
+```python
