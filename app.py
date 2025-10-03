@@ -1280,4 +1280,3 @@ elif st.session_state.stage == 'data_view':
         f"</div>",
         unsafe_allow_html=True
     )
-```python
