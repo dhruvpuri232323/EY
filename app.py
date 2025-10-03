@@ -681,7 +681,6 @@ elif st.session_state.stage == 'pdf_view':
             st.rerun()
     
     try:
-        # Try to get PDF info
         import base64
         
         # Read PDF file
@@ -704,24 +703,39 @@ elif st.session_state.stage == 'pdf_view':
         
         st.markdown("<br>", unsafe_allow_html=True)
         
-        # PDF viewer using Mozilla's PDF.js
+        # PDF viewer using embedded iframe with base64
         st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
         
-        pdf_viewer_html = f"""
-        <div style="background: #1a1f2e; border-radius: 8px; padding: 1rem;">
-            <div style="text-align: center; margin-bottom: 1rem;">
-                <p style="color: #a3a3a3; font-size: 0.9rem;">📄 PDF Document Viewer</p>
-            </div>
+        # Display PDF using Streamlit's native capability
+        st.markdown("### 📄 PDF Document")
+        st.markdown("<p style='color: #a3a3a3; font-size: 0.9rem;'>If the PDF doesn't display properly, use the download button below</p>", unsafe_allow_html=True)
+        
+        # Method 1: Try direct display with st components
+        try:
+            # Create an HTML embed for the PDF
+            pdf_display = f"""
+                <div style="width: 100%; height: 800px; border: 1px solid #2d3347; border-radius: 8px; overflow: hidden;">
+                    <embed src="data:application/pdf;base64,{base64_pdf}" 
+                           type="application/pdf" 
+                           width="100%" 
+                           height="100%"
+                           style="border: none;">
+                </div>
+            """
+            st.markdown(pdf_display, unsafe_allow_html=True)
+        except:
+            # Fallback: Show iframe
+            pdf_viewer_html = f"""
             <iframe 
-                src="https://mozilla.github.io/pdf.js/web/viewer.html?file=data:application/pdf;base64,{base64_pdf}" 
+                src="data:application/pdf;base64,{base64_pdf}#toolbar=1&navpanes=1&scrollbar=1" 
                 width="100%" 
                 height="800px" 
-                style="border: none; border-radius: 4px;">
+                type="application/pdf"
+                style="border: 1px solid #2d3347; border-radius: 4px;">
             </iframe>
-        </div>
-        """
+            """
+            st.markdown(pdf_viewer_html, unsafe_allow_html=True)
         
-        st.markdown(pdf_viewer_html, unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
         
         # Download and open options
@@ -730,74 +744,98 @@ elif st.session_state.stage == 'pdf_view':
         
         with col1:
             # Download button
-            with open(st.session_state.selected_file, "rb") as pdf_file:
-                st.download_button(
-                    label="📥 Download PDF",
-                    data=pdf_file,
-                    file_name=st.session_state.selected_file,
-                    mime="application/pdf",
-                    use_container_width=True,
-                    key="download_pdf"
-                )
+            st.download_button(
+                label="📥 Download PDF",
+                data=pdf_bytes,
+                file_name=st.session_state.selected_file,
+                mime="application/pdf",
+                use_container_width=True,
+                key="download_pdf"
+            )
         
         with col2:
-            # Open in new tab
+            # Open in new tab button
             st.markdown(
-                f"""<a href="data:application/pdf;base64,{base64_pdf}" target="_blank" style="text-decoration: none;">
-                <button style="width: 100%; background: #3b5bdb; color: white; border: none; border-radius: 6px; padding: 0.5rem 1.5rem; font-weight: 500; cursor: pointer;">
-                    🔗 Open in New Tab
-                </button>
-                </a>""",
+                f"""
+                <a href="data:application/pdf;base64,{base64_pdf}" 
+                   download="{st.session_state.selected_file}" 
+                   target="_blank"
+                   style="text-decoration: none;">
+                    <button style="width: 100%; background: #3b5bdb; color: white; border: none; 
+                                   border-radius: 6px; padding: 0.5rem 1.5rem; font-weight: 500; 
+                                   cursor: pointer; font-family: 'Inter', sans-serif;">
+                        🔗 Open in Browser
+                    </button>
+                </a>
+                """,
                 unsafe_allow_html=True
             )
         
         with col3:
             # View as text (if PyPDF2 available)
             if PYPDF2_AVAILABLE:
-                if st.button("📝 Extract Text", use_container_width=True, key="extract_text"):
-                    try:
-                        import PyPDF2
+                if st.button("📝 Extract Text", use_container_width=True, key="extract_text_btn"):
+                    st.session_state.show_text = True
+                    st.rerun()
+        
+        # Text extraction section
+        if hasattr(st.session_state, 'show_text') and st.session_state.show_text:
+            if PYPDF2_AVAILABLE:
+                try:
+                    import PyPDF2
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+                    st.markdown("### 📝 Extracted Text")
+                    
+                    with st.spinner("Extracting text from PDF..."):
                         pdf_reader = PyPDF2.PdfReader(st.session_state.selected_file)
                         
-                        st.markdown("<br>", unsafe_allow_html=True)
-                        st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
-                        st.markdown("### 📝 Extracted Text")
-                        
-                        # Extract text from first 5 pages
+                        # Extract text from all pages or first 10
                         text_content = ""
-                        max_pages = min(5, len(pdf_reader.pages))
+                        max_pages = min(10, len(pdf_reader.pages))
                         
                         for page_num in range(max_pages):
                             page = pdf_reader.pages[page_num]
-                            text_content += f"\n--- Page {page_num + 1} ---\n\n"
+                            text_content += f"\n{'='*60}\n"
+                            text_content += f"PAGE {page_num + 1}\n"
+                            text_content += f"{'='*60}\n\n"
                             text_content += page.extract_text()
+                            text_content += "\n"
                         
-                        if len(pdf_reader.pages) > 5:
-                            text_content += f"\n\n... ({len(pdf_reader.pages) - 5} more pages)"
+                        if len(pdf_reader.pages) > 10:
+                            text_content += f"\n\n... ({len(pdf_reader.pages) - 10} more pages not shown)"
                         
                         st.text_area(
-                            "Text Content (First 5 pages)",
+                            "Text Content (First 10 pages)",
                             text_content,
-                            height=400,
+                            height=500,
                             key="pdf_text_content"
                         )
                         
-                        # Download text
+                        # Download text button
                         st.download_button(
-                            label="📥 Download as Text",
+                            label="📥 Download Full Text",
                             data=text_content.encode('utf-8'),
                             file_name=f"{Path(st.session_state.selected_file).stem}.txt",
                             mime="text/plain",
                             use_container_width=True
                         )
                         
-                        st.markdown("</div>", unsafe_allow_html=True)
-                    except Exception as e:
-                        st.error(f"Error extracting text: {str(e)}")
+                        # Button to hide text
+                        if st.button("❌ Hide Text", use_container_width=True):
+                            st.session_state.show_text = False
+                            st.rerun()
+                    
+                    st.markdown("</div>", unsafe_allow_html=True)
+                    
+                except Exception as e:
+                    st.error(f"Error extracting text: {str(e)}")
+            else:
+                st.warning("PyPDF2 library not available. Install it with: pip install PyPDF2")
         
         # Info message
         st.markdown("<br>", unsafe_allow_html=True)
-        st.info("💡 **Tip:** Use the toolbar in the viewer to navigate pages, zoom, and search within the PDF. If the viewer doesn't load, try the 'Open in New Tab' button.")
+        st.info("💡 **Viewing Tips:** If the PDF doesn't display in your browser, use the 'Download PDF' button to view it locally. Chrome and Edge typically have better PDF support than Firefox.")
     
     except Exception as e:
         st.error(f"Error loading PDF: {str(e)}")
@@ -807,15 +845,18 @@ elif st.session_state.stage == 'pdf_view':
         st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
         st.warning("⚠️ Unable to display PDF in browser. Please download the file to view it.")
         
-        with open(st.session_state.selected_file, "rb") as pdf_file:
-            st.download_button(
-                label="📥 Download PDF to View",
-                data=pdf_file,
-                file_name=st.session_state.selected_file,
-                mime="application/pdf",
-                use_container_width=True,
-                key="download_pdf_fallback"
-            )
+        try:
+            with open(st.session_state.selected_file, "rb") as pdf_file:
+                st.download_button(
+                    label="📥 Download PDF to View",
+                    data=pdf_file,
+                    file_name=st.session_state.selected_file,
+                    mime="application/pdf",
+                    use_container_width=True,
+                    key="download_pdf_fallback"
+                )
+        except Exception as download_error:
+            st.error(f"Error preparing download: {str(download_error)}")
         
         st.markdown("</div>", unsafe_allow_html=True)
     
